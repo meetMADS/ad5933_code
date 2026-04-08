@@ -10,8 +10,8 @@ from ic_code import calibration_table_maker
 
 
 start = 20_000
-stop = 80_500
-num =  20
+stop = 40_000
+num =  11
 def main():
     gf_mat, cal_freq_array = calibration_table_maker(start,stop, num)
 

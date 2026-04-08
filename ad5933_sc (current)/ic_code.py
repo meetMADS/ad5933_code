@@ -137,10 +137,10 @@ def _read_one_point(freq):
 
     _cmd(CMD_STANDBY)
     _wr(REG_CTRL_LO, 0x00)
-    time.sleep_ms(5)
+    time.sleep_ms(20)
 
     _cmd(CMD_INIT_START_FREQ)
-    time.sleep_ms(5)
+    time.sleep_ms(15)
 
     _cmd(CMD_START_SWEEP)
 
@@ -282,12 +282,12 @@ _SW_DUT_RCAL = Pin(28, Pin.OUT) # Low = Rcal, High = DUT
 # these are the rfb and rcal values in kΩ
 # r_known = [1, 4.9, 48, 51.9, 98.4, 145.4, 218, 315.4, 392, 426.4, 484, 531, 701, 812, 875]
 r_known = [
-    1e3, 
+    # 1e3, 
     10e3,
     48e3,
-    100e3,
-    201e3
-    # 301e3,
+    100e3
+    # 201e3,
+    # 301e3
     # 401e3,
     # 510e3,
     # 560e3,
@@ -297,12 +297,12 @@ r_known = [
 ]
 
 r_select_lines = [
-    (0, 0, 0, 0, 1),   # 1     kΩ
+    # (0, 0, 0, 0, 1),   # 1     kΩ
     (1, 0, 0, 0, 1),   # 10    kΩ
     (0, 0, 0, 0, 0),   # 51    kΩ
-    (0, 1, 0, 0, 1),   # 100   kΩ
-    (0, 0, 1, 0, 0)   # 201   kΩ
-    # (0, 0, 0, 1, 0),   # 301   kΩ
+    (0, 1, 0, 0, 1)   # 100   kΩ
+    # (0, 0, 1, 0, 0),   # 201   kΩ
+    # (0, 0, 0, 1, 0)   # 301   kΩ
     # (0, 0, 1, 1, 0),   # 401   kΩ
     # (1, 1, 0, 0, 1),   # 510   kΩ
     # (1, 1, 0, 0, 0),   # 560   kΩ
@@ -458,6 +458,31 @@ def calibration_table_maker( START_FREQ, STOP_FREQ, NO_READINGS):
         print(", ".join(line))
 
     return gain_factor_matrix, freq_array
+
+####### THIS IS FOR EXTERNAL CAILBRATION AND THEN CHECKING
+# def calibration_table_maker( START_FREQ, STOP_FREQ, NO_READINGS):
+#     if NO_READINGS <= 1:
+#         freq_array = [START_FREQ]
+#     else:
+#         step = (STOP_FREQ - START_FREQ) / (NO_READINGS - 1)
+#         freq_array = [START_FREQ + i * step for i in range(NO_READINGS)]
+
+#     _SW_DUT_RCAL.value(1)
+#     time.sleep_ms(2)
+
+#     gain_factor_matrix = [
+#         [(None, None) for _ in range(len(freq_array))] for _ in range(len(r_known))
+#     ]
+
+#     for i, res in enumerate(r_known):
+#         switching_logic_rcal_rfb(res)
+#         line = [str(res)+" Ω"]
+#         for j, freq in enumerate(freq_array):
+#             line.append(str(freq))
+#             gain_factor_matrix[i][j] = gain_factor_cal(res, freq)
+#         print(", ".join(line))
+
+#     return gain_factor_matrix, freq_array
 
 
 # def reading_bare(gain_factor_matrix, rcal, freq, freq_array):
