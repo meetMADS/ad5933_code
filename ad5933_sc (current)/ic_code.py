@@ -140,7 +140,7 @@ def _read_one_point(freq):
     time.sleep_ms(5)
 
     _cmd(CMD_INIT_START_FREQ)
-    time.sleep_ms(100)
+    time.sleep_ms(5)
 
     _cmd(CMD_START_SWEEP)
 
@@ -157,11 +157,6 @@ def _read_one_point(freq):
 # ── TEMPORAL AVERAGE (multi-read) ─────────────────────────────────────────
 
 def _average_raw(freq, num_reads):
-    """
-    Repeat the measurement `num_reads` times at `freq` Hz.
-    Accumulate and average R/Im before returning.
-    Returns (r_avg, im_avg) or None if all reads failed.
-    """
     _prog_single(freq)
 
     sum_r = 0.0
@@ -245,22 +240,6 @@ def measure_single_freq(freq, gain_factor, system_phase_rad, num_sweeps=None):
 
 
 def gain_factor_cal(r_cal_ohms, freq):
-    """
-    Compute and return the gain factor of the AD5933 at `freq` Hz,
-    using `r_cal_ohms` as the known calibration resistor value.
-
-    Internally runs CAL_SWEEPS repeated measurements and averages
-    R/Im BEFORE computing GF (preserves linearity of the average).
-
-    Parameters
-    ----------
-    freq        : float  — measurement frequency in Hz
-    r_cal_ohms  : float  — calibration resistor value in Ohms (e.g. 10000.0)
-
-    Returns
-    -------
-    float  — gain factor at `freq`, or None on hardware failure
-    """
     result = _average_raw(freq, CAL_SWEEPS)
     if result is None:
         # print("[ERROR] gain_factor_cal: all reads failed at {} Hz".format(freq))
@@ -445,12 +424,7 @@ def reading_bare(gain_factor_matrix, rcal, freq, freq_array):
 ########################################################################################
 
 def switching_logic_rcal_rfb(resistance_value):
-    """
-    Switch MUX A and MUX B select lines to connect
-    the resistor matching resistance_value (Ω).
-    resistance_value MUST be a value present in r_known.
-    """
-    idx = r_known.index(resistance_value)  # direct lookup, O(n) but n=11
+    idx = r_known.index(resistance_value)
     asl1, asl0, bsl1, bsl0, shrt = r_select_lines[idx]
 
     _ASL1.value(asl1)  # GP2
@@ -459,7 +433,7 @@ def switching_logic_rcal_rfb(resistance_value):
     _BSL0.value(bsl0)  # GP6
     _SHRT.value(shrt)  # GP0
 
-    time.sleep_ms(10)  # MUX settling time
+    time.sleep_ms(5)  # MUX settling time
 
 def calibration_table_maker( START_FREQ, STOP_FREQ, NO_READINGS):
     if NO_READINGS <= 1:
@@ -480,7 +454,6 @@ def calibration_table_maker( START_FREQ, STOP_FREQ, NO_READINGS):
         line = [str(res)+" Ω"]
         for j, freq in enumerate(freq_array):
             line.append(str(freq))
-            # print(f"{res}, {freq}")
             gain_factor_matrix[i][j] = gain_factor_cal(res, freq)
         print(", ".join(line))
 
