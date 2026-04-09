@@ -9,10 +9,11 @@ from ic_code import sweep
 from ic_code import calibration_table_maker
 
 
-start = 20_000
-stop = 40_000
-num =  5
+start = 30_000
+stop = 35_000
+num =  11
 def main():
+
     gf_mat, cal_freq_array = calibration_table_maker(start,stop, num)
 
     while True:
