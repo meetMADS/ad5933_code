@@ -171,6 +171,36 @@ def _hw_sweep_raw(start_freq, freq_step, num_points, timeout_ms=3000):
     _wr(REG_CTRL_HI, CMD_POWER_DOWN)
     return results
 
+# ── AVERAGED HARDWARE SWEEP ───────────────────────────────────────────────
+
+def _hw_sweep_averaged(start_freq, freq_step, num_points, num_sweeps):
+    """
+    Run _hw_sweep_raw `num_sweeps` times, accumulate R/Im per point, return averages.
+
+    Returns list of (freq_hz, r_avg, im_avg), length == num_points.
+    Points where ALL passes failed → (freq_hz, None, None).
+    """
+    n      = min(num_points, 512)
+    sum_r  = [0.0] * n
+    sum_im = [0.0] * n
+    cnt    = [0]   * n
+
+    for _ in range(num_sweeps):
+        raw = _hw_sweep_raw(start_freq, freq_step, n)
+        for i, (_f, r, im) in enumerate(raw):
+            if r is not None:
+                sum_r[i]  += r
+                sum_im[i] += im
+                cnt[i]    += 1
+
+    return [
+        (start_freq + i * freq_step,
+         sum_r[i] / cnt[i] if cnt[i] else None,
+         sum_im[i] / cnt[i] if cnt[i] else None)
+        for i in range(n)
+    ]
+
+
 def _prog_single(freq):
     """
     Program AD5933 registers for a single measurement at `freq` Hz.
@@ -370,8 +400,8 @@ _SW_DUT_RCAL = Pin(28, Pin.OUT) # Low = Rcal, High = DUT
 # r_known = [1, 4.9, 48, 51.9, 98.4, 145.4, 218, 315.4, 392, 426.4, 484, 531, 701, 812, 875]
 r_known = [
     # 1e3, 
-    10e3,
-    48e3
+    10e3
+    # 48e3,
     # 100e3
     # 201e3,
     # 301e3,
@@ -385,8 +415,8 @@ r_known = [
 
 r_select_lines = [
     # (0, 0, 0, 0, 1),   # 1     kΩ
-    (1, 0, 0, 0, 1),   # 10    kΩ
-    (0, 0, 0, 0, 0)   # 48    kΩ
+    (1, 0, 0, 0, 1)   # 10    kΩ
+    # (0, 0, 0, 0, 0),   # 48    kΩ
     # (0, 1, 0, 0, 1)   # 100   kΩ
     # (0, 0, 1, 0, 0),   # 201   kΩ
     # (0, 0, 0, 1, 0),   # 301   kΩ
@@ -549,6 +579,58 @@ def calibration_table_maker( START_FREQ, STOP_FREQ, NO_READINGS):
         # want to save calib matric to the local pico
 
     return gain_factor_matrix, freq_array
+
+
+
+def calibration_table_maker_hw(START_FREQ, STOP_FREQ, NO_READINGS):
+    """
+    Hardware-sweep calibration: same output format as calibration_table_maker()
+    but uses _hw_sweep_averaged instead of per-point _average_raw.
+
+    Returns (gain_factor_matrix, freq_array) — drop-in replacement.
+    """
+    if NO_READINGS <= 1:
+        freq_array = [START_FREQ]
+        freq_step  = 0.0
+    else:
+        freq_step  = (STOP_FREQ - START_FREQ) / (NO_READINGS - 1)
+        freq_array = [START_FREQ + i * freq_step for i in range(NO_READINGS)]
+
+    _SW_DUT_RCAL.value(0)   # connect Rcal path
+    time.sleep_ms(2)
+
+    gain_factor_matrix = [
+        [(None, None) for _ in range(len(freq_array))]
+        for _ in range(len(r_known))
+    ]
+
+    for i, res in enumerate(r_known):
+        switching_logic_rcal_rfb(res)
+        print(f"calibrating (HW sweep) for {res} Ω")
+        print(f" freq(hz) | gain factor (1/Ω) | system phase (°)")
+
+        # CAL_SWEEPS averaged hardware passes for this Rcal
+        averaged = _hw_sweep_averaged(START_FREQ, freq_step, NO_READINGS, CAL_SWEEPS)
+
+        for j, (freq, r_avg, im_avg) in enumerate(averaged):
+            if r_avg is None:
+                print(f"{freq:.1f}   FAILED")
+                continue                      # gain_factor_matrix[i][j] stays (None, None)
+
+            mag = math.sqrt(r_avg * r_avg + im_avg * im_avg)
+            if mag == 0.0:
+                print(f"{freq:.1f}   zero magnitude")
+                continue
+
+            gf = 1.0 / (res * mag)
+            sp = math.atan2(im_avg, r_avg)
+            gain_factor_matrix[i][j] = (gf, sp)
+            print(f"{freq:.1f}   {gf:.3e}   {math.degrees(sp):.2f}°")
+
+    return gain_factor_matrix, freq_array
+
+
+
 
 
 
@@ -818,7 +900,7 @@ def sweep_hw(gain_factor_matrix, START_FREQ, STOP_FREQ, NO_READINGS,
         gf_sp.append((gf, sp))
 
     # ── Fire hardware sweep ───────────────────────────────────────────────
-    raw = _hw_sweep_raw(START_FREQ, freq_step, NO_READINGS)
+    raw = _hw_sweep_averaged(START_FREQ, freq_step, NO_READINGS, _MEAS_SWEEPS)
 
     # ── Convert raw (R, Im) → calibrated impedance ───────────────────────
     results = []
