@@ -5,12 +5,13 @@ from machine import Pin
 import time
 # import matplotlib as plt
 
-from ic_code import sweep
-from ic_code import calibration_table_maker
+from ic_code_try_makehardware_perplexity import sweep
+from ic_code_try_makehardware_perplexity import calibration_table_maker
+from ic_code_try_makehardware_perplexity import sweep_hw
 
 
 start = 30_000
-stop = 35_000
+stop = 40_000
 num =  11
 def main():
 
@@ -21,7 +22,8 @@ def main():
         cin = input().strip().lower()
 
         if cin == 'd':
-            results = sweep(gf_mat, start, stop, num, 2, cal_freq_array)
+            # results = sweep(gf_mat, start, stop, num, 2, cal_freq_array)
+            results = sweep_hw(gf_mat, start, stop, num, cal_freq_array)
             print("{:<12} {:<14} {:<14} {:<12} {:<12}".format("Freq (Hz)", "Z_real (Ω)", "Z_imag (Ω)", "|Z| (Ω)", "R_cal (Ω)"))
             print("-" * 55)
             for i in range(0, num):

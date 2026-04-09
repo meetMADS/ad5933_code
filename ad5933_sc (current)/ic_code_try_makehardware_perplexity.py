@@ -84,6 +84,92 @@ def _poll(mask, timeout_ms=3000):
         time.sleep_ms(1)
 
 # ── SINGLE-POINT PROGRAMMING ──────────────────────────────────────────────
+# ── HARDWARE SWEEP HELPERS ────────────────────────────────────────────────
+
+def _prog_sweep(start_freq, freq_step, num_points):
+    """
+    Program AD5933 for a true hardware sweep:
+      start_freq  : Hz (float/int)
+      freq_step   : Hz between points (float/int)
+      num_points  : total number of measurement points (1..512)
+                    num_increments = num_points - 1  (max 511 per datasheet)
+    """
+    num_inc = num_points - 1          # datasheet: num increments = points - 1
+    if num_inc < 0:   num_inc = 0
+    if num_inc > 511: num_inc = 511   # hardware limit
+
+    sf = _freq_code(start_freq)
+    fi = _freq_code(freq_step) if freq_step > 0 else 0
+    sc = min(SETTLING_CYCLES, 511)
+
+    # Start frequency
+    _wr(0x82, (sf >> 16) & 0xFF)
+    _wr(0x83, (sf >>  8) & 0xFF)
+    _wr(0x84,  sf        & 0xFF)
+
+    # Frequency increment
+    _wr(0x85, (fi >> 16) & 0xFF)
+    _wr(0x86, (fi >>  8) & 0xFF)
+    _wr(0x87,  fi        & 0xFF)
+
+    # Number of increments  (9-bit: hi byte is bit8 only)
+    _wr(0x88, (num_inc >> 8) & 0x01)
+    _wr(0x89,  num_inc       & 0xFF)
+
+    # Settling time cycles
+    _wr(0x8A, (sc >> 8) & 0x01)
+    _wr(0x8B,  sc        & 0xFF)
+
+
+def _hw_sweep_raw(start_freq, freq_step, num_points, timeout_ms=3000):
+    """
+    Execute a hardware frequency sweep and return raw (R, Im) pairs.
+
+    Returns:
+        list of (freq_hz, r, im)  — length == num_points
+        Points that time out are stored as (freq_hz, None, None).
+
+    The chip is left in power-down after the sweep.
+    """
+    num_points = min(num_points, 512)   # 511 increments → 512 points max
+
+    _prog_sweep(start_freq, freq_step, num_points)
+
+    _cmd(CMD_STANDBY)
+    _wr(REG_CTRL_LO, 0x00)
+    time.sleep_ms(20)
+
+    _cmd(CMD_INIT_START_FREQ)
+    time.sleep_ms(15)
+
+    _cmd(CMD_START_SWEEP)             # chip now measures point 0
+
+    results = []
+    freq = start_freq
+
+    for i in range(num_points):
+        # Poll for data-ready on this point
+        if not _poll(STATUS_DATA_READY, timeout_ms):
+            results.append((freq, None, None))
+        else:
+            r  = _rd16s(REG_REAL_HI, REG_REAL_LO)
+            im = _rd16s(REG_IMAG_HI, REG_IMAG_LO)
+            results.append((freq, r, im))
+        if _rd(REG_STATUS) & STATUS_SWEEP_DONE:
+            for j in range(i + 1, num_points):
+                freq += freq_step
+                results.append((freq, None, None))
+            break
+
+        # Advance to next point (skip on last iteration)
+        if i < num_points - 1:
+            _cmd(CMD_INCREMENT_FREQ)
+            # No extra sleep needed — poll above handles timing
+
+        freq += freq_step
+
+    _wr(REG_CTRL_HI, CMD_POWER_DOWN)
+    return results
 
 def _prog_single(freq):
     """
@@ -670,4 +756,93 @@ def sweep(gain_factor_matrix, START_FREQ, STOP_FREQ, NO_READINGS, mode, freq_arr
         # time.sleep_ms(5)
     # print("=" * 55)
     # print("Sweep complete. {} / {} points succeeded.".format(sum(1 for _, zr, _ in results if zr is not None), len(results)))
+    return results
+
+
+def sweep_hw(gain_factor_matrix, START_FREQ, STOP_FREQ, NO_READINGS,
+             freq_array):
+    """
+    Hardware-sweep replacement for sweep().
+
+    Uses the AD5933's internal frequency increment engine.
+    Calibration (gain_factor_matrix) is still software-built — unchanged.
+
+    Returns same format as sweep():
+        list of (freq_hz, z_real, z_imag, rcal_used)
+    """
+    temp = read_temp()
+    if temp is None:
+        return []
+
+    LED.value(1)
+    time.sleep_ms(100)
+    LED.value(0)
+
+    if NO_READINGS <= 1:
+        freq_step = 0.0
+    else:
+        freq_step = (STOP_FREQ - START_FREQ) / (NO_READINGS - 1)
+
+    # ── Single Rcal pass (pick best Rcal for the sweep centre) ───────────
+    # For a hardware sweep we pick one Rcal; reading_with_logic adaptive
+    # logic doesn't apply here because we can't interrupt mid-sweep.
+    # Use the middle frequency as a proxy to choose Rcal.
+    mid_freq  = (START_FREQ + STOP_FREQ) / 2
+    # Quick single-point probe with Rcal[0] to get a rough impedance
+    _SW_DUT_RCAL.value(1)
+    time.sleep_ms(2)
+    probe_rcal = r_known[0]
+    switching_logic_rcal_rfb(probe_rcal)
+    probe_val = reading_bare(gain_factor_matrix, probe_rcal, mid_freq, freq_array)
+    rcal_idx  = floor_cal(probe_val) if probe_val is not None else 0
+    rcal      = r_known[rcal_idx]
+
+    # ── Switch to selected Rcal/RFB, connect DUT ─────────────────────────
+    _SW_DUT_RCAL.value(1)
+    time.sleep_ms(2)
+    switching_logic_rcal_rfb(rcal)
+
+    # ── Look up (or interpolate) GF/SP for every point ───────────────────
+    gf_sp = []
+    for freq in freq_array:
+        gf, sp = _interp_gf_sp(gain_factor_matrix, rcal_idx, freq, freq_array)
+        if gf is None:                    # outside calibrated range — fallback
+            _SW_DUT_RCAL.value(0)
+            time.sleep_ms(2)
+            switching_logic_rcal_rfb(rcal)
+            gf, sp = gain_factor_cal(rcal, freq)
+            _SW_DUT_RCAL.value(1)
+            time.sleep_ms(2)
+            switching_logic_rcal_rfb(rcal)
+        gf_sp.append((gf, sp))
+
+    # ── Fire hardware sweep ───────────────────────────────────────────────
+    raw = _hw_sweep_raw(START_FREQ, freq_step, NO_READINGS)
+
+    # ── Convert raw (R, Im) → calibrated impedance ───────────────────────
+    results = []
+    for i, (freq, r, im) in enumerate(raw):
+        if r is None:
+            results.append((freq, None, None, rcal))
+            continue
+
+        gf, sp = gf_sp[i]
+        if gf is None:
+            results.append((freq, None, None, rcal))
+            continue
+
+        mag = math.sqrt(r * r + im * im)
+        if mag == 0:
+            results.append((freq, None, None, rcal))
+            continue
+
+        z_mag   = 1.0 / (gf * mag)
+        z_phase = math.atan2(im, r) - sp
+        results.append((
+            freq,
+            z_mag * math.cos(z_phase),
+            z_mag * math.sin(z_phase),
+            rcal
+        ))
+
     return results
