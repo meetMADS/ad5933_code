@@ -1,0 +1,15 @@
+3. MUX / RFB characterization
+
+- Select one MUX line and measure the other resistances through it
+- Ensure measurements are done while powered ON (not off)
+- This helps verify switching accuracy
+
+---
+
+4. Parasitic modelling (important)
+
+- Measure complex impedance of the Rfb network using a lab impedance analyzer (WEL)
+- Do this across different MUX selections
+- Goal: estimate parasitic capacitance and model it
+
+---

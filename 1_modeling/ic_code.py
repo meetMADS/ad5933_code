@@ -283,9 +283,9 @@ _SW_DUT_RCAL = Pin(28, Pin.OUT) # Low = Rcal, High = DUT
 # r_known = [1, 4.9, 48, 51.9, 98.4, 145.4, 218, 315.4, 392, 426.4, 484, 531, 701, 812, 875]
 r_known = [
     # 1e3, 
-    # 10e3,
-    48e3
-    # 100e3
+    # 10e3
+    # 48e3
+    100e3
     # 201e3,
     # 301e3,
     # 401e3,
@@ -298,9 +298,9 @@ r_known = [
 
 r_select_lines = [
     # (0, 0, 0, 0, 1),   # 1     kΩ
-    # (1, 0, 0, 0, 1),   # 10    kΩ
-    (0, 0, 0, 0, 0)   # 48    kΩ
-    # (0, 1, 0, 0, 1)   # 100   kΩ
+    # (1, 0, 0, 0, 1)   # 10    kΩ
+    # (0, 0, 0, 0, 0)   # 48    kΩ
+    (0, 1, 0, 0, 1)   # 100   kΩ
     # (0, 0, 1, 0, 0),   # 201   kΩ
     # (0, 0, 0, 1, 0),   # 301   kΩ
     # (0, 0, 1, 1, 0),   # 401   kΩ
@@ -462,7 +462,6 @@ def calibration_table_maker( START_FREQ, STOP_FREQ, NO_READINGS):
         # want to save calib matric to the local pico
 
     return gain_factor_matrix, freq_array
-
 
 
 def save_matrix_csv(filename, r_values, freq_array, matrix):

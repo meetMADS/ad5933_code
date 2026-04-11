@@ -5,21 +5,21 @@ from machine import Pin
 import time
 # import matplotlib as plt
 
-from ic_code_try_makehardware_perplexity_caltry import sweep
-from ic_code_try_makehardware_perplexity_caltry import calibration_table_maker
-from ic_code_try_makehardware_perplexity_caltry import sweep_hw
-from ic_code_try_makehardware_perplexity_caltry import calibration_table_maker_hw
+from ic_code import sweep
+from ic_code import calibration_table_maker
+# from ic_code import sweep_hw
+# from ic_code import calibration_table_maker_hw
 
-start = 1_000
-stop = 100_000
-num =  30
-hardware = True
+start = 20_000
+stop = 25_000
+num =  5
+# hardware = false
 def main():
 
-    if not hardware :
-        gf_mat, cal_freq_array = calibration_table_maker(start,stop, num)
-    else:
-        gf_mat, cal_freq_array = calibration_table_maker_hw(start, stop, num)
+    # if not hardware :
+    gf_mat, cal_freq_array = calibration_table_maker(start,stop, num)
+    # else:
+        # gf_mat, cal_freq_array = calibration_table_maker_hw(start, stop, num)
 
 
     while True:
@@ -27,10 +27,10 @@ def main():
         cin = input().strip().lower()
 
         if cin == 'd':
-            if not hardware:
-                results = sweep(gf_mat, start, stop, num, 2, cal_freq_array)
-            else:
-                results = sweep_hw(gf_mat, start, stop, num, cal_freq_array)
+            # if not hardware:
+            results = sweep(gf_mat, start, stop, num, 2, cal_freq_array)
+            # else:
+                # results = sweep_hw(gf_mat, start, stop, num, cal_freq_array)
             print("{:<12} {:<14} {:<14} {:<12} {:<12}".format("Freq (Hz)", "Z_real (Ω)", "Z_imag (Ω)", "|Z| (Ω)", "R_cal (Ω)"))
             print("-" * 55)
             for i in range(0, num):
